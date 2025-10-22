@@ -4,4 +4,7 @@ channels:
   - https://repo.anaconda.com/pkgs/r
 dependencies:
   - python=3.12
+  - pip
+  - pip:
+    - -r requirements.txt
 prefix: /home/tony/.conda/envs/burgertorch

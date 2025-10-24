@@ -4,3 +4,4 @@ torchvision
 
 --index-url https://pypi.org/simple
 scipy
+pyDOE

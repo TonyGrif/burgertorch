@@ -3,9 +3,10 @@ Burgers' Equation
 """
 
 from typing import List, Tuple
+
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 
 
 class ContinuousInferenceNetwork(nn.Module):

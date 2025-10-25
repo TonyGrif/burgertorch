@@ -8,13 +8,24 @@ from scipy.interpolate import griddata
 
 import burgertorch
 
+np.random.seed(1234) # For reproducibility
 
 def main() -> None:
     # Global Space
     nu = 0.01 / np.pi  # Predefined Kinematic Viscosity
     N_u = 100  # Number of training points
     N_f = 10000  # Number of collocation points
-    layers = [2, 20, 20, 20, 20, 20, 20, 20, 1]  # Neural Network Layers
+    layers = [
+        (2,20),
+        (20, 20),
+        (20, 20),
+        (20, 20),
+        (20, 20),
+        (20, 20),
+        (20, 20),
+        (20, 20),
+        (20, 1),
+    ]  # Neural Network Layers
 
     print(f"Startng with globals: nu={nu}, N_u={N_u}, N_f={N_f}, layers={layers}")
 

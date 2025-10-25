@@ -1,3 +1,4 @@
+import torch
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,7 +9,9 @@ from scipy.interpolate import griddata
 
 import burgertorch
 
-np.random.seed(1234) # For reproducibility
+# For reproducibility
+np.random.seed(1234)
+torch.manual_seed(1234)
 
 def main() -> None:
     # Global Space

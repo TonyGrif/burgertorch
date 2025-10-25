@@ -49,19 +49,19 @@ class ContinuousInferenceNetwork(nn.Module):
         # ADAM optimizer
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
 
-    def build_network(self, layers: List[int]) -> nn.Sequential:
+    def build_network(self, layers: List[Tuple[int, int]]) -> nn.Sequential:
         """Build the Sequential Network architecture
 
         Args:
-            layers: A List of layers of ints
+            layers: A List of layers of Tuples of Ints
 
         Returns:
             Sequential model
         """
         lays = []
 
-        for i in range(len(layers) - 2):
-            lays.append(nn.Linear(layers[i], layers[i + 1]))
+        for i in range(len(layers) - 1):
+            lays.append(nn.Linear(layers[i][0], layers[i][1]))
 
             # TODO: look into these methods more
             nn.init.xavier_normal_(lays[-1].weight)
@@ -70,7 +70,7 @@ class ContinuousInferenceNetwork(nn.Module):
             lays.append(nn.Tanh())
 
         # Final Output
-        lays.append(nn.Linear(layers[-2], layers[-1]))
+        lays.append(nn.Linear(layers[-1][0], layers[-1][1]))
         nn.init.xavier_normal_(lays[-1].weight)
         nn.init.zeros_(lays[-1].bias)
 

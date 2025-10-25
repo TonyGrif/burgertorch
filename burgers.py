@@ -1,11 +1,12 @@
-import numpy as np
-from pyDOE import lhs
-import scipy
-from scipy.interpolate import griddata
-import burgertorch
-import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.gridspec as gridspec
+import matplotlib.pyplot as plt
+import numpy as np
+import scipy
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from pyDOE import lhs
+from scipy.interpolate import griddata
+
+import burgertorch
 
 
 def main() -> None:

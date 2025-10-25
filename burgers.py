@@ -176,6 +176,7 @@ def main() -> None:
     ax.set_ylim((-1.1, 1.1))
     ax.set_title("$t = 0.75$", fontsize=10)
 
+    plt.savefig("{}.pdf".format("continuous_inverence"))
     plt.show()
 
 

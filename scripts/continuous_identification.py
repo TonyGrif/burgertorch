@@ -1,24 +1,25 @@
+from pathlib import Path
+
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy
+import scipy.io
 import torch
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from pyDOE import lhs
 from scipy.interpolate import griddata
 
 import burgertorch
 
-# For reproducibility
 np.random.seed(1234)
 torch.manual_seed(1234)
+
+OUTPUT_DIR = "output"
 
 
 def main() -> None:
     # Global Space
-    nu = 0.01 / np.pi  # Predefined Kinematic Viscosity
-    N_u = 100  # Number of training points
-    N_f = 10000  # Number of collocation points
+    nu = 0.01 / np.pi  # Perdefined Viscosity
+    N_u = 2000  # Number of training points
     layers = [
         (2, 20),
         (20, 20),
@@ -31,72 +32,86 @@ def main() -> None:
         (20, 1),
     ]  # Neural Network Layers
 
-    print(f"Startng with globals: nu={nu}, N_u={N_u}, N_f={N_f}, layers={layers}")
+    print(f"Startng with globals: nu={nu}, N_u={N_u}, layers={layers}")
 
     # Data Space
     data = scipy.io.loadmat("data/burgers_shock.mat")
 
     t = data["t"].flatten()[:, None]  # Time Component
     x = data["x"].flatten()[:, None]  # X Variable
-    exact = np.real(data["usol"]).T  # U Component of the Solution
+    Exact = np.real(data["usol"]).T  # U Component of Solution
     print(
-        f"Aquired data with following sizes: t={t.size}, x={x.size}, exact={exact.size}"
+        f"Aquired data with following sizes: t={t.size}, x={x.size}, exact={Exact.size}"
     )
 
     X, T = np.meshgrid(x, t)  # Create Coordinate Grid of Points
-    print(f"Created meshgrids with sizes: X={X.shape}, T={T.shape}")
-
     X_star = np.hstack(
         (X.flatten()[:, None], T.flatten()[:, None])
     )  # Concat Mesh Matrixes Horizontally
     print(f"Stacking grid arrays to create new size of {X_star.shape}")
-    u_star = exact.flatten()[:, None]  # Needed for error metrics
+    u_star = Exact.flatten()[:, None]  # Needed for error metrics
 
-    lower_bound = X_star.min(0)  # Minimum Row in the Stack
-    upper_bound = X_star.max(0)  # Maxium Row in the Stack
-    print(f"Lower bound = {lower_bound}, upper bound = {upper_bound}")
+    lb = X_star.min(0)  # Minimum Row in Stack
+    ub = X_star.max(0)  # Maximum Row in Stack
+    print(f"Lower bound = {lb}, upper bound = {ub}")
 
-    xx1 = np.hstack((X[0:1, :].T, T[0:1, :].T))  # Aligning Values
-    uu1 = exact[0:1, :].T
+    # Limit data for training
+    idx = np.random.choice(X_star.shape[0], N_u, replace=False)
+    X_u_train = X_star[idx, :]
+    u_train = u_star[idx, :]
 
-    xx2 = np.hstack((X[:, 0:1], T[:, 0:1]))
-    uu2 = exact[:, 0:1]
-
-    xx3 = np.hstack((X[:, -1:], T[:, -1:]))
-    uu3 = exact[:, -1:]
-
-    X_u_train = np.vstack([xx1, xx2, xx3])  # Training Data Matrix
-    print(f"Aquired training data of shape {X_u_train.shape}")
-    u_train = np.vstack([uu1, uu2, uu3])  # Exact Matrix
-    print(f"Aquired training exact training data of shape {u_train.shape}")
-
-    X_f_train = lower_bound + (upper_bound - lower_bound) * lhs(
-        2, N_f
-    )  # Collocation Matrix
-    X_f_train = np.vstack((X_f_train, X_u_train))
-    print(f"Aquired collocation training data of shape {X_f_train.shape}")
-
-    idx = np.random.choice(
-        X_u_train.shape[0], N_u, replace=False
-    )  # Limit Training Points
-    X_u_train = X_u_train[idx, :]
-    print(f"Limited training data to shape {X_u_train.shape}")
-    u_train = u_train[idx, :]
-    print(f"Limited exact training data to shape {u_train.shape}")
-
-    network = burgertorch.ContinuousInferenceNetwork(
-        X_u_train, u_train, X_f_train, lower_bound, upper_bound, nu, layers
+    network = burgertorch.ContinuousIdentificationNetwork(
+        X_u_train, u_train, layers, lb, ub
     )
     print(f"Created sequential model structure: {network.model}")
 
-    # Model Training and Metrics
-    network.train_model(10000)
+    # Train zero iterations (this mirrors the TF main which sometimes calls train(0))
+    network.train(nIter=0)  # runs LBFGS only (Adam loop is zero-length)
 
+    # Predict on full grid
     u_pred, _ = network.predict(X_star)
-    error_u = np.linalg.norm(u_star - u_pred, 2) / np.linalg.norm(u_star, 2)
-    print(f"Calculated of u={error_u}")
 
+    # compute relative L2 error in u
+    error_u = np.linalg.norm(u_star - u_pred, 2) / np.linalg.norm(u_star, 2)
+
+    print(f"Calculated error u (clean)={error_u}")
+
+    # reconstruct grid for plotting (same as TF code)
     U_pred = griddata(X_star, u_pred.flatten(), (X, T), method="cubic")
+
+    # extract identified PDE parameters
+    lambda_1_value = network.lambda_1.detach().cpu().numpy().ravel()[0]
+    lambda_2_value = torch.exp(network.lambda_2_param).detach().cpu().numpy().ravel()[0]
+
+    error_lambda_1 = np.abs(lambda_1_value - 1.0) * 100
+    error_lambda_2 = np.abs(lambda_2_value - nu) / nu * 100
+
+    print("Error of l1: %.5f%%" % (error_lambda_1))
+    print("Error of l2: %.5f%%" % (error_lambda_2))
+
+    # ---------------------------
+    # Now run the noisy-data experiment (1% noise)
+    # ---------------------------
+    noise = 0.01
+    u_train_noisy = u_train + noise * np.std(u_train) * np.random.randn(*u_train.shape)
+
+    network_noisy = burgertorch.ContinuousIdentificationNetwork(
+        X_u_train, u_train_noisy, layers, lb, ub
+    )
+    network_noisy.train(nIter=10000)  # run Adam 10000 its then L-BFGS
+
+    u_pred_noisy, f_pred_noisy = network_noisy.predict(X_star)
+
+    lambda_1_value_noisy = network_noisy.lambda_1.detach().cpu().numpy().ravel()[0]
+    lambda_2_value_noisy = (
+        torch.exp(network_noisy.lambda_2_param).detach().cpu().numpy().ravel()[0]
+    )
+
+    error_lambda_1_noisy = np.abs(lambda_1_value_noisy - 1.0) * 100
+    error_lambda_2_noisy = np.abs(lambda_2_value_noisy - nu) / nu * 100
+
+    print("Error of l1 (noisy): %.5f%%" % (error_lambda_1_noisy))
+    print("Error of l2 (noisy): %.5f%%" % (error_lambda_2_noisy))
 
     # Graphing
     figwidth = 390 * (1 / 72.27)
@@ -147,7 +162,7 @@ def main() -> None:
     gs1.update(top=1 - 1 / 3, bottom=0, left=0.1, right=0.9, wspace=0.5)
 
     ax = plt.subplot(gs1[0, 0])
-    ax.plot(x, exact[25, :], "b-", linewidth=2, label="Exact")
+    ax.plot(x, Exact[25, :], "b-", linewidth=2, label="Exact")
     ax.plot(x, U_pred[25, :], "r--", linewidth=2, label="Prediction")
     ax.set_xlabel("$x$")
     ax.set_ylabel("$u(t,x)$")
@@ -157,7 +172,7 @@ def main() -> None:
     ax.set_ylim((-1.1, 1.1))
 
     ax = plt.subplot(gs1[0, 1])
-    ax.plot(x, exact[50, :], "b-", linewidth=2, label="Exact")
+    ax.plot(x, Exact[50, :], "b-", linewidth=2, label="Exact")
     ax.plot(x, U_pred[50, :], "r--", linewidth=2, label="Prediction")
     ax.set_xlabel("$x$")
     ax.set_ylabel("$u(t,x)$")
@@ -168,7 +183,7 @@ def main() -> None:
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.35), ncol=5, frameon=False)
 
     ax = plt.subplot(gs1[0, 2])
-    ax.plot(x, exact[75, :], "b-", linewidth=2, label="Exact")
+    ax.plot(x, Exact[75, :], "b-", linewidth=2, label="Exact")
     ax.plot(x, U_pred[75, :], "r--", linewidth=2, label="Prediction")
     ax.set_xlabel("$x$")
     ax.set_ylabel("$u(t,x)$")
@@ -177,7 +192,11 @@ def main() -> None:
     ax.set_ylim((-1.1, 1.1))
     ax.set_title("$t = 0.75$", fontsize=10)
 
-    plt.savefig("continuous_inference.pdf")
+    dir = Path(OUTPUT_DIR)
+    if not dir.exists():
+        dir.mkdir()
+    plt.savefig(f"{dir}/continuous_identifiction.pdf")
+
     plt.show()
 
 

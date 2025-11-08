@@ -22,6 +22,7 @@ class ContinuousInferenceNetwork(nn.Module):
             lb: Lower bound of data
             ub: Upper bound of data
             nu: The viscosity
+            layers: The network architecture layers
         """
         super(ContinuousInferenceNetwork, self).__init__()
 

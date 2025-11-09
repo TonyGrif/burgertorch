@@ -54,8 +54,8 @@ class ContinuousInferenceNetwork(nn.Module):
         self.u = torch.tensor(u, dtype=torch.float32, device=self.device)
 
         # Collocation data
-        self.x_f = torch.tensor(X_f[:, 0:1], dtype=torch.float32, device=self.device)
-        self.t_f = torch.tensor(X_f[:, 1:2], dtype=torch.float32, device=self.device)
+        self.x_f = torch.tensor(X_f[:, 0:1], dtype=torch.float32, device=self.device, requires_grad=True)
+        self.t_f = torch.tensor(X_f[:, 1:2], dtype=torch.float32, device=self.device, requires_grad=True)
 
         # Viscosity
         self.nu = nu
@@ -115,9 +115,6 @@ class ContinuousInferenceNetwork(nn.Module):
         Returns:
             Torch Tensor
         """
-        x.requires_grad = True
-        t.requires_grad = True
-
         u = self.forward(x, t)
         u_t = torch.autograd.grad(
             u, t, grad_outputs=torch.ones_like(u), create_graph=True
@@ -152,7 +149,7 @@ class ContinuousInferenceNetwork(nn.Module):
         self.model.train()
 
         for epoch in range(max_epochs):
-            self.optimizer.zero_grad()
+            self.optimizer.zero_grad(set_to_none=True)
             loss = self.loss_func()
             loss.backward()
             self.optimizer.step()

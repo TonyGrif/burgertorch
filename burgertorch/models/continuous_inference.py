@@ -19,7 +19,7 @@ class ContinuousInferenceNetwork(nn.Module):
         X_f: np.ndarray,
         lb: np.ndarray,
         ub: np.ndarray,
-        nu: int,
+        nu: float,
         layers: List[Tuple[int, int]],
         device: Optional[str] = None,
     ) -> None:

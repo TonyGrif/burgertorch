@@ -2,7 +2,7 @@
 Burgers' Equation
 """
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -12,7 +12,17 @@ import torch.nn as nn
 class ContinuousInferenceNetwork(nn.Module):
     """The Neural Network for continuous inference of Burgers' Equation"""
 
-    def __init__(self, X_u, u, X_f, lb, ub, nu, layers) -> None:
+    def __init__(
+        self,
+        X_u: np.ndarray,
+        u: np.ndarray,
+        X_f: np.ndarray,
+        lb: np.ndarray,
+        ub: np.ndarray,
+        nu: int,
+        layers: List[Tuple[int, int]],
+        device: Optional[str] = None,
+    ) -> None:
         """Constructor for the ContinuousInferenceNetwork
 
         Args:
@@ -23,34 +33,40 @@ class ContinuousInferenceNetwork(nn.Module):
             ub: Upper bound of data
             nu: The viscosity
             layers: The network architecture layers
+            device: The device to send tensors to
         """
         super(ContinuousInferenceNetwork, self).__init__()
 
+        if device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device(device)
+
         # Bound tensors
-        self.lower_bound = torch.tensor(lb, dtype=torch.float32)
-        self.upper_bound = torch.tensor(ub, dtype=torch.float32)
+        self.lower_bound = torch.tensor(lb, dtype=torch.float32, device=self.device)
+        self.upper_bound = torch.tensor(ub, dtype=torch.float32, device=self.device)
 
         # Training data
-        self.x_u = torch.tensor(X_u[:, 0:1], dtype=torch.float32)
-        self.t_u = torch.tensor(X_u[:, 1:2], dtype=torch.float32)
+        self.x_u = torch.tensor(X_u[:, 0:1], dtype=torch.float32, device=self.device)
+        self.t_u = torch.tensor(X_u[:, 1:2], dtype=torch.float32, device=self.device)
 
         # Exact data
-        self.u = torch.tensor(u, dtype=torch.float32)
+        self.u = torch.tensor(u, dtype=torch.float32, device=self.device)
 
         # Collocation data
-        self.x_f = torch.tensor(X_f[:, 0:1], dtype=torch.float32)
-        self.t_f = torch.tensor(X_f[:, 1:2], dtype=torch.float32)
+        self.x_f = torch.tensor(X_f[:, 0:1], dtype=torch.float32, device=self.device)
+        self.t_f = torch.tensor(X_f[:, 1:2], dtype=torch.float32, device=self.device)
 
         # Viscosity
         self.nu = nu
 
         # Build model architecture
-        self.model = self.build_network(layers)
+        self.model = self._build_network(layers).to(self.device)
 
         # ADAM optimizer
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3)
 
-    def build_network(self, layers: List[Tuple[int, int]]) -> nn.Sequential:
+    def _build_network(self, layers: List[Tuple[int, int]]) -> nn.Sequential:
         """Build the Sequential Network architecture
 
         Args:
@@ -64,7 +80,6 @@ class ContinuousInferenceNetwork(nn.Module):
         for i in range(len(layers) - 1):
             lays.append(nn.Linear(layers[i][0], layers[i][1]))
 
-            # TODO: look into these methods more
             nn.init.xavier_normal_(lays[-1].weight)
             nn.init.zeros_(lays[-1].bias)
 
@@ -153,15 +168,17 @@ class ContinuousInferenceNetwork(nn.Module):
         Returns:
             Tuple of numpy ndarray type, containing 2 values
         """
-        x = torch.tensor(X_star[:, 0:1], dtype=torch.float32)
-        t = torch.tensor(X_star[:, 1:2], dtype=torch.float32)
+        x = torch.tensor(
+            X_star[:, 0:1], dtype=torch.float32, requires_grad=True, device=self.device
+        )
+        t = torch.tensor(
+            X_star[:, 1:2], dtype=torch.float32, requires_grad=True, device=self.device
+        )
         self.model.eval()
 
         with torch.no_grad():
             u_pred = self.forward(x, t)
 
-        x.requires_grad = True
-        t.requires_grad = True
         f_pred = self.net_f(x, t)
 
         return u_pred.detach().numpy(), f_pred.detach().numpy()

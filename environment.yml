@@ -1,5 +1,6 @@
 name: burgertorch
 channels:
+  - conda-forge
   - defaults
 dependencies:
   - python=3.12
@@ -7,3 +8,4 @@ dependencies:
   - pip:
     - -r requirements.txt
     - -e .
+  - optuna=4.5.*

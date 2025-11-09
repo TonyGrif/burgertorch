@@ -8,4 +8,3 @@ dependencies:
   - pip:
     - -r requirements.txt
     - -e .
-prefix: /home/tony/.conda/envs/burgertorch

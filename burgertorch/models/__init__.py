@@ -5,7 +5,7 @@ Attributes:
     ContinuousIdentificationNetwork: Neural Network for solving continuous identification
 """
 
-from .continuous_inference import ContinuousInferenceNetwork
 from .continuous_identification import ContinuousIdentificationNetwork
+from .continuous_inference import ContinuousInferenceNetwork
 
 __all__ = ["ContinuousInferenceNetwork", "ContinuousIdentificationNetwork"]

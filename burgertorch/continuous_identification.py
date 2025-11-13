@@ -174,35 +174,30 @@ class ContinuousIdentificationNetwork(nn.Module):
                 )
                 start_time = time.time()
 
-        # --- L-BFGS refinement ---
-        # PyTorch's LBFGS has different options, but we can set history_size similar to maxcor.
-        # We also pass all parameters (network + PDE parameters).
         self.optimizer_lbfgs = optim.LBFGS(
             params, max_iter=50000, history_size=50, line_search_fn="strong_wolfe"
         )
 
-        # Closure required by PyTorch LBFGS: recompute loss & grads
+        # Closure required by PyTorch LBFGS
         def closure():
             self.optimizer_lbfgs.zero_grad()
             loss = self.loss_func()
             loss.backward()
             return loss
 
-        print("Starting L-BFGS optimization (this may take a while)...")
+        print("Starting L-BFGS optimization")
         start_time = time.time()
-        # run LBFGS until convergence (PyTorch will call the closure multiple times internally)
         self.optimizer_lbfgs.step(closure)
         elapsed = time.time() - start_time
+        print(f"L-BFGS finished in {elapsed:.2f}")
 
         # Final callback-style print similar to TF's loss_callback
         final_loss = self.loss_func().item()
         final_lambda_1 = self.lambda_1.detach().cpu().numpy().ravel()[0]
         final_lambda_2 = torch.exp(self.lambda_2).detach().cpu().numpy().ravel()[0]
         print(
-            "Loss: %e, l1: %.5f, l2: %.5f"
-            % (final_loss, final_lambda_1, final_lambda_2)
+            f"Loss: {final_loss}, l1: {final_lambda_1:5f}, l2: {final_lambda_2:.5f}"
         )
-        print("L-BFGS finished in %.2f seconds" % (elapsed))
 
     def predict(self, X_star):
         """

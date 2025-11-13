@@ -54,8 +54,12 @@ class ContinuousInferenceNetwork(nn.Module):
         self.u = torch.tensor(u, dtype=torch.float32, device=self.device)
 
         # Collocation data
-        self.x_f = torch.tensor(X_f[:, 0:1], dtype=torch.float32, device=self.device, requires_grad=True)
-        self.t_f = torch.tensor(X_f[:, 1:2], dtype=torch.float32, device=self.device, requires_grad=True)
+        self.x_f = torch.tensor(
+            X_f[:, 0:1], dtype=torch.float32, device=self.device, requires_grad=True
+        )
+        self.t_f = torch.tensor(
+            X_f[:, 1:2], dtype=torch.float32, device=self.device, requires_grad=True
+        )
 
         # Viscosity
         self.nu = nu

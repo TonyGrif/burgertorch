@@ -66,7 +66,7 @@ def main() -> None:
     print(f"Created sequential model structure: {network.model}")
 
     # Train zero iterations (this mirrors the TF main which sometimes calls train(0))
-    network.train(nIter=0)  # runs LBFGS only (Adam loop is zero-length)
+    network.train_model(0)  # runs LBFGS only (Adam loop is zero-length)
 
     # Predict on full grid
     u_pred, _ = network.predict(X_star)
@@ -81,7 +81,7 @@ def main() -> None:
 
     # extract identified PDE parameters
     lambda_1_value = network.lambda_1.detach().cpu().numpy().ravel()[0]
-    lambda_2_value = torch.exp(network.lambda_2_param).detach().cpu().numpy().ravel()[0]
+    lambda_2_value = torch.exp(network.lambda_2).detach().cpu().numpy().ravel()[0]
 
     error_lambda_1 = np.abs(lambda_1_value - 1.0) * 100
     error_lambda_2 = np.abs(lambda_2_value - nu) / nu * 100
@@ -98,13 +98,13 @@ def main() -> None:
     network_noisy = burgertorch.ContinuousIdentificationNetwork(
         X_u_train, u_train_noisy, layers, lb, ub
     )
-    network_noisy.train(nIter=10000)  # run Adam 10000 its then L-BFGS
+    network_noisy.train_model()
 
     u_pred_noisy, f_pred_noisy = network_noisy.predict(X_star)
 
     lambda_1_value_noisy = network_noisy.lambda_1.detach().cpu().numpy().ravel()[0]
     lambda_2_value_noisy = (
-        torch.exp(network_noisy.lambda_2_param).detach().cpu().numpy().ravel()[0]
+        torch.exp(network_noisy.lambda_2).detach().cpu().numpy().ravel()[0]
     )
 
     error_lambda_1_noisy = np.abs(lambda_1_value_noisy - 1.0) * 100

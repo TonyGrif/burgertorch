@@ -61,21 +61,13 @@ class ContinuousIdentificationNetwork(nn.Module):
         # Build model architecture
         self.model = self._build_network(layers).to(self.device)
 
-        # Initialize learnable PDE coefficients:
-        # lambda_1 is a free parameter (initial 0.0)
-        # lambda_2_param stores the log-like parameter so final lambda_2 = exp(lambda_2_param),
-        # matching the TensorFlow original where lambda_2 = exp(self.lambda_2)
         self.lambda_1 = nn.Parameter(
             torch.tensor([0.0], dtype=torch.float32, device=self.device)
         )
-        self.lambda_2_param = nn.Parameter(
+        self.lambda_2 = nn.Parameter(
             torch.tensor([-6.0], dtype=torch.float32, device=self.device)
         )
 
-        # Optimizers: Adam for initial training, LBFGS for final refinement
-        # We'll construct optimizers externally when training begins to ensure correct parameter sets.
-        # However, prepare placeholders here:
-        self.optimizer_adam = None
         self.optimizer_lbfgs = None
 
     def _build_network(self, layers: List[Tuple[int, int]]) -> nn.Sequential:
@@ -115,8 +107,7 @@ class ContinuousIdentificationNetwork(nn.Module):
         return self.model(X_norm)
 
     def net_f(self, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
-        """
-        Compute the PDE `f = u_t + lambda_1 * u * u_x - lambda_2 * u_xx`
+        """Compute the PDE `f = u_t + lambda_1 * u * u_x - lambda_2 * u_xx`
 
         Args:
             X: X tensor
@@ -124,16 +115,11 @@ class ContinuousIdentificationNetwork(nn.Module):
 
         Returns:
             Torch Tensor
-
-        lambda_2 = exp(lambda_2_param) to enforce positivity (same as TF).
-        Autograd is used to compute derivatives w.r.t. x and t.
         """
-        # make sure the inputs require gradients for derivative computation
         x = x.clone().detach().requires_grad_(True)
         t = t.clone().detach().requires_grad_(True)
 
-        u = self.forward(x, t)  # u has computational graph from parameters & inputs
-
+        u = self.forward(x, t)
         u_t = torch.autograd.grad(
             u, t, grad_outputs=torch.ones_like(u), create_graph=True
         )[0]
@@ -144,18 +130,14 @@ class ContinuousIdentificationNetwork(nn.Module):
             u_x, x, grad_outputs=torch.ones_like(u_x), create_graph=True
         )[0]
 
-        # physical parameters
-        lambda_1 = self.lambda_1
-        lambda_2 = torch.exp(self.lambda_2_param)
-
-        f = u_t + lambda_1 * u * u_x - lambda_2 * u_xx
+        f = u_t + self.lambda_1 * u * u_x - torch.exp(self.lambda_2) * u_xx
         return f
 
-    def loss_func(self):
-        """
-        Compute total loss:
-            loss = MSE(u - u_pred) + MSE(f_pred)
-        Mirrors: tf.reduce_mean(tf.square(self.u_tf - self.u_pred)) + tf.reduce_mean(tf.square(self.f_pred))
+    def loss_func(self) -> torch.Tensor:
+        """Compute total loss of boundary loss and PDE loss
+
+        Returns:
+            Torch Tensor
         """
         u_pred = self.forward(self.x, self.t)
         f_pred = self.net_f(self.x, self.t)
@@ -163,40 +145,32 @@ class ContinuousIdentificationNetwork(nn.Module):
         mse_f = torch.mean(f_pred**2)
         return mse_u + mse_f
 
-    def train(self, nIter=10000, lr_adam=1e-3):
-        """
-        Train the PINN:
-         - Run Adam for nIter iterations (printing progress every 10 iters),
-         - Then run L-BFGS for final refinement (mimics tf.contrib.scipy L-BFGS-B behavior).
-        """
-        # set model to train mode
-        super().train()
+    def train_model(self, max_epochs: int = 10000):
+        """Train model with ADAM and LBFGS optimizers
 
-        # --- Adam optimizer setup ---
-        # include both network parameters and PDE coefficient parameters
-        params = list(self.model.parameters()) + [self.lambda_1, self.lambda_2_param]
-        self.optimizer_adam = optim.Adam(params, lr=lr_adam)
+        Args:
+            max_epochs: The maxiumn number of epochs to do
+        """
+        self.model.train()
+
+        params = list(self.model.parameters()) + [self.lambda_1, self.lambda_2]
+        adam = optim.Adam(params, lr=1e-3)
 
         start_time = time.time()
-
-        # Adam training loop (like TF train_op_Adam)
-        for it in range(nIter):
-            self.optimizer_adam.zero_grad()
+        for epoch in range(max_epochs):
+            adam.zero_grad()
             loss = self.loss_func()
             loss.backward()
-            self.optimizer_adam.step()
+            adam.step()
 
-            # print progress every 10 iterations (matching TF print frequency)
-            if it % 10 == 0:
+            if epoch % 1000 == 0:
                 elapsed = time.time() - start_time
-                # compute readable values for lambdas exactly as TF did
                 lambda_1_value = self.lambda_1.detach().cpu().numpy().ravel()[0]
                 lambda_2_value = (
-                    torch.exp(self.lambda_2_param).detach().cpu().numpy().ravel()[0]
+                    torch.exp(self.lambda_2).detach().cpu().numpy().ravel()[0]
                 )
                 print(
-                    "It: %d, Loss: %.3e, Lambda_1: %.6f, Lambda_2: %.8f, Time: %.2f"
-                    % (it, loss.item(), lambda_1_value, lambda_2_value, elapsed)
+                    f"It: {epoch}, Loss: {loss.item():3e}, Lambda_1: {lambda_1_value:.6f}, Lambda_2: {lambda_2_value:.8f}, Time: {elapsed:.2f}"
                 )
                 start_time = time.time()
 
@@ -223,9 +197,7 @@ class ContinuousIdentificationNetwork(nn.Module):
         # Final callback-style print similar to TF's loss_callback
         final_loss = self.loss_func().item()
         final_lambda_1 = self.lambda_1.detach().cpu().numpy().ravel()[0]
-        final_lambda_2 = (
-            torch.exp(self.lambda_2_param).detach().cpu().numpy().ravel()[0]
-        )
+        final_lambda_2 = torch.exp(self.lambda_2).detach().cpu().numpy().ravel()[0]
         print(
             "Loss: %e, l1: %.5f, l2: %.5f"
             % (final_loss, final_lambda_1, final_lambda_2)

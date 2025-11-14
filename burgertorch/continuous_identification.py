@@ -68,8 +68,6 @@ class ContinuousIdentificationNetwork(nn.Module):
             torch.tensor([-6.0], dtype=torch.float32, device=self.device)
         )
 
-        self.optimizer_lbfgs = None
-
     def _build_network(self, layers: List[Tuple[int, int]]) -> nn.Sequential:
         """Build the Sequential Network architecture
 
@@ -174,49 +172,44 @@ class ContinuousIdentificationNetwork(nn.Module):
                 )
                 start_time = time.time()
 
-        self.optimizer_lbfgs = optim.LBFGS(
+        lbfgs = optim.LBFGS(
             params, max_iter=50000, history_size=50, line_search_fn="strong_wolfe"
         )
 
         # Closure required by PyTorch LBFGS
         def closure():
-            self.optimizer_lbfgs.zero_grad()
+            lbfgs.zero_grad()
             loss = self.loss_func()
             loss.backward()
             return loss
 
         print("Starting L-BFGS optimization")
         start_time = time.time()
-        self.optimizer_lbfgs.step(closure)
+        lbfgs.step(closure)
         elapsed = time.time() - start_time
         print(f"L-BFGS finished in {elapsed:.2f}")
 
-        # Final callback-style print similar to TF's loss_callback
         final_loss = self.loss_func().item()
         final_lambda_1 = self.lambda_1.detach().cpu().numpy().ravel()[0]
         final_lambda_2 = torch.exp(self.lambda_2).detach().cpu().numpy().ravel()[0]
-        print(
-            f"Loss: {final_loss}, l1: {final_lambda_1:5f}, l2: {final_lambda_2:.5f}"
-        )
+        print(f"Loss: {final_loss}, l1: {final_lambda_1:5f}, l2: {final_lambda_2:.5f}")
 
-    def predict(self, X_star):
-        """
-        Predict u and f at new points X_star (Nx2 numpy array).
-        For u: use torch.no_grad() for efficiency (no need for gradients).
-        For f: enable requires_grad on inputs and compute autograd derivatives.
-        Returns numpy arrays (u_pred, f_pred).
-        """
-        self.eval()  # set to eval mode
+    def predict(self, X_star: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Evaluate the trained model on new points
 
+        Args:
+            X_star: Numpy Array
+
+        Returns:
+            Tuple of ndarray type
+        """
         x = torch.tensor(X_star[:, 0:1], dtype=torch.float32, device=self.device)
         t = torch.tensor(X_star[:, 1:2], dtype=torch.float32, device=self.device)
+        self.eval()
 
-        # compute u prediction without tracking gradients (faster)
         with torch.no_grad():
             u_pred = self.forward(x, t).cpu().numpy()
 
-        # compute f prediction (requires gradients wrt inputs)
-        # ensure inputs require grad
         xg = x.clone().detach().requires_grad_(True)
         tg = t.clone().detach().requires_grad_(True)
 

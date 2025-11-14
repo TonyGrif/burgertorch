@@ -65,33 +65,25 @@ def main() -> None:
     )
     print(f"Created sequential model structure: {network.model}")
 
-    # Train zero iterations (this mirrors the TF main which sometimes calls train(0))
-    network.train_model(0)  # runs LBFGS only (Adam loop is zero-length)
+    # Train with LBFGS only
+    network.train_model(0)
 
-    # Predict on full grid
     u_pred, _ = network.predict(X_star)
-
-    # compute relative L2 error in u
     error_u = np.linalg.norm(u_star - u_pred, 2) / np.linalg.norm(u_star, 2)
-
     print(f"Calculated error u (clean)={error_u}")
 
-    # reconstruct grid for plotting (same as TF code)
     U_pred = griddata(X_star, u_pred.flatten(), (X, T), method="cubic")
 
-    # extract identified PDE parameters
     lambda_1_value = network.lambda_1.detach().cpu().numpy().ravel()[0]
     lambda_2_value = torch.exp(network.lambda_2).detach().cpu().numpy().ravel()[0]
 
     error_lambda_1 = np.abs(lambda_1_value - 1.0) * 100
     error_lambda_2 = np.abs(lambda_2_value - nu) / nu * 100
 
-    print("Error of l1: %.5f%%" % (error_lambda_1))
-    print("Error of l2: %.5f%%" % (error_lambda_2))
+    print(f"Clean error of l1: {error_lambda_1:.5f}")
+    print(f"Clean error of l2: {error_lambda_2:.5f}")
 
-    # ---------------------------
-    # Now run the noisy-data experiment (1% noise)
-    # ---------------------------
+    # Noisy Data
     noise = 0.01
     u_train_noisy = u_train + noise * np.std(u_train) * np.random.randn(*u_train.shape)
 
@@ -100,7 +92,8 @@ def main() -> None:
     )
     network_noisy.train_model()
 
-    u_pred_noisy, f_pred_noisy = network_noisy.predict(X_star)
+    u_pred_noisy, _ = network_noisy.predict(X_star)
+    U_pred_noisy = griddata(X_star, u_pred_noisy.flatten(), (X, T), method="cubic")
 
     lambda_1_value_noisy = network_noisy.lambda_1.detach().cpu().numpy().ravel()[0]
     lambda_2_value_noisy = (
@@ -110,16 +103,17 @@ def main() -> None:
     error_lambda_1_noisy = np.abs(lambda_1_value_noisy - 1.0) * 100
     error_lambda_2_noisy = np.abs(lambda_2_value_noisy - nu) / nu * 100
 
-    print("Error of l1 (noisy): %.5f%%" % (error_lambda_1_noisy))
-    print("Error of l2 (noisy): %.5f%%" % (error_lambda_2_noisy))
+    print(f"Noisy error of l1: {error_lambda_1_noisy:.5f}")
+    print(f"Noisy error of l2: {error_lambda_2_noisy:.5f}")
 
-    # Graphing
-    figwidth = 390 * (1 / 72.27)
-    figheight = figwidth * (np.sqrt(5.0) - 1.0) / 2.0
+    # Graphing Clean Data
+    figwidth = 390 * (1 / 72.27) + 1
+    figheight = figwidth * (np.sqrt(5.0) - 1.0) / 2.0 + 1
 
     fig = plt.figure(
         figsize=(figwidth, figheight),
     )
+    plt.title("Clean Data")
     ax = fig.add_subplot(111)
     ax.axis("off")
 
@@ -195,8 +189,93 @@ def main() -> None:
     dir = Path(OUTPUT_DIR)
     if not dir.exists():
         dir.mkdir()
-    plt.savefig(f"{dir}/continuous_identifiction.pdf")
+    plt.savefig(f"{dir}/continuous_identifiction_clean.png")
+    plt.show()
 
+    # Graphing noisy data
+    figwidth = 390 * (1 / 72.27) + 1
+    figheight = figwidth * (np.sqrt(5.0) - 1.0) / 2.0 + 1
+
+    fig = plt.figure(
+        figsize=(figwidth, figheight),
+    )
+    plt.title("Noisy Data")
+    ax = fig.add_subplot(111)
+    ax.axis("off")
+
+    gs0 = gridspec.GridSpec(1, 2)
+    gs0.update(top=1 - 0.06, bottom=1 - 1 / 3, left=0.15, right=0.85, wspace=0)
+    ax = plt.subplot(gs0[:, :])
+
+    h = ax.imshow(
+        U_pred_noisy.T,
+        interpolation="nearest",
+        cmap="rainbow",
+        extent=(t.min(), t.max(), x.min(), x.max()),
+        origin="lower",
+        aspect="auto",
+    )
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    fig.colorbar(h, cax=cax)
+
+    ax.plot(
+        X_u_train[:, 1],
+        X_u_train[:, 0],
+        "kx",
+        label="Data (%d points)" % (u_train.shape[0]),
+        markersize=4,
+        clip_on=False,
+    )
+
+    line = np.linspace(x.min(), x.max(), 2)[:, None]
+    ax.plot(t[25] * np.ones((2, 1)), line, "w-", linewidth=1)
+    ax.plot(t[50] * np.ones((2, 1)), line, "w-", linewidth=1)
+    ax.plot(t[75] * np.ones((2, 1)), line, "w-", linewidth=1)
+
+    ax.set_xlabel("$t$")
+    ax.set_ylabel("$x$")
+    ax.legend(frameon=False, loc="best")
+    ax.set_title("$u(t,x)$", fontsize=10)
+
+    gs1 = gridspec.GridSpec(1, 3)
+    gs1.update(top=1 - 1 / 3, bottom=0, left=0.1, right=0.9, wspace=0.5)
+
+    ax = plt.subplot(gs1[0, 0])
+    ax.plot(x, Exact[25, :], "b-", linewidth=2, label="Exact")
+    ax.plot(x, U_pred_noisy[25, :], "r--", linewidth=2, label="Prediction")
+    ax.set_xlabel("$x$")
+    ax.set_ylabel("$u(t,x)$")
+    ax.set_title("$t = 0.25$", fontsize=10)
+    ax.axis("square")
+    ax.set_xlim((-1.1, 1.1))
+    ax.set_ylim((-1.1, 1.1))
+
+    ax = plt.subplot(gs1[0, 1])
+    ax.plot(x, Exact[50, :], "b-", linewidth=2, label="Exact")
+    ax.plot(x, U_pred_noisy[50, :], "r--", linewidth=2, label="Prediction")
+    ax.set_xlabel("$x$")
+    ax.set_ylabel("$u(t,x)$")
+    ax.axis("square")
+    ax.set_xlim((-1.1, 1.1))
+    ax.set_ylim((-1.1, 1.1))
+    ax.set_title("$t = 0.50$", fontsize=10)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.35), ncol=5, frameon=False)
+
+    ax = plt.subplot(gs1[0, 2])
+    ax.plot(x, Exact[75, :], "b-", linewidth=2, label="Exact")
+    ax.plot(x, U_pred_noisy[75, :], "r--", linewidth=2, label="Prediction")
+    ax.set_xlabel("$x$")
+    ax.set_ylabel("$u(t,x)$")
+    ax.axis("square")
+    ax.set_xlim((-1.1, 1.1))
+    ax.set_ylim((-1.1, 1.1))
+    ax.set_title("$t = 0.75$", fontsize=10)
+
+    dir = Path(OUTPUT_DIR)
+    if not dir.exists():
+        dir.mkdir()
+    plt.savefig(f"{dir}/continuous_identifiction_noisy.png")
     plt.show()
 
 

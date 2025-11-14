@@ -107,8 +107,8 @@ def main() -> None:
     if not dir.exists():
         dir.mkdir()
 
-    figwidth = 390 * (1 / 72.27)
-    figheight = figwidth * (np.sqrt(5.0) - 1.0) / 2.0
+    figwidth = 390 * (1 / 72.27) + 1
+    figheight = figwidth * (np.sqrt(5.0) - 1.0) / 2.0 + 1
 
     fig = plt.figure(
         figsize=(figwidth, figheight),
@@ -185,7 +185,7 @@ def main() -> None:
     ax.set_ylim((-1.1, 1.1))
     ax.set_title("$t = 0.75$", fontsize=10)
 
-    plt.savefig(f"{dir}/continuous_inference.pdf")
+    plt.savefig(f"{dir}/continuous_inference.png", dpi=300)
     plt.show()
 
 
